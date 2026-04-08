@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}GOL Home Games — Scrapyboard{% endblock %}
+
+{% block content %}
+  <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <h1 style="margin:0;">GOL — Home games</h1>
+    <span class="pill">{{ games|length }} affichés</span>
+  </div>
+
+  <p class="muted" style="margin-top:8px;">
+    Pour alimenter la base: lance <code>python manage.py scrape_gol_home</code>.
+  </p>
+  <p class="muted" style="margin-top:8px;">
+    {{ total_count }} matches total.
+  </p>
+
+  {% if games %}
+    <table style="margin-top:16px;">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Tournoi</th>
+          <th>Match</th>
+          <th>Match ID</th>
+          <th>Blue</th>
+          <th>Red</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in games %}
+          <tr>
+            <td class="muted">{{ g.game_date }}</td>
+            <td>{{ g.tournament }}</td>
+            <td><a href="{{ g.match_url }}" target="_blank" rel="noreferrer">{{ g.game_name }}</a></td>
+            <td class="muted">{{ g.game_id }}</td>
+            <td class="muted">
+              {% for c in g.blue_champions %}{{ c.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </td>
+            <td class="muted">
+              {% for c in g.red_champions %}{{ c.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p style="margin-top:16px;">Aucune donnée pour le moment.</p>
+  {% endif %}
+{% endblock %}
+
