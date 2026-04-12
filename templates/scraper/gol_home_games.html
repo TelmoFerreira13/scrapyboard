@@ -30,10 +30,10 @@
       <tbody>
         {% for g in games %}
           <tr>
-            <td class="muted">{{ g.game_date }}</td>
+            <td class="muted">{{ g.match_date }}</td>
             <td>{{ g.tournament }}</td>
-            <td><a href="{{ g.match_url }}" target="_blank" rel="noreferrer">{{ g.game_name }}</a></td>
-            <td class="muted">{{ g.game_id }}</td>
+            <td><a href="{{ g.match_url }}" target="_blank" rel="noreferrer">{{ g.match_name }}</a></td>
+            <td class="muted">{{ g.match_id }}</td>
             <td class="muted">
               {% for c in g.blue_champions %}{{ c.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
             </td>
