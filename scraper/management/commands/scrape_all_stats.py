@@ -1,12 +1,18 @@
 from __future__ import annotations
+from turtle import mode
 
 from django.core.management.base import BaseCommand, CommandError
 
 import re
+import json
 from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
+
+from scraper.models import GolGame, GameFullStats
+from scraper.services.validators import to_decimal, to_int
+
 
 GOL_URL = "https://gol.gg/"
 
@@ -21,6 +27,63 @@ HEADERS = {
     "Referer": "https://gol.gg/",
 }
 
+STAT_MAP = {
+    "Level": "level",
+    "Kills": "kills",
+    "Deaths": "deaths",
+    "Assists": "assists",
+    "KDA": "kda",
+    "CS": "cs",
+    "CS in Team's Jungle": "cs_in_team_jungle",
+    "CS in Enemy Jungle": "cs_in_enemy_jungle",
+    "CSM": "csm",
+    "Golds": "golds",
+    "GPM": "gpm",
+    "GOLD%": "gold_pct",
+    "Vision Score": "vision_score",
+    "Wards placed": "wards_placed",
+    "Wards destroyed": "wards_destroyed",
+    "Control Wards Purchased": "control_wards_purchased",
+    "Detector Wards Placed": "detector_wards_placed",
+    "VSPM": "vspm",
+    "WPM": "wpm",
+    "VWPM": "vwpm",
+    "WCPM": "wcpm",
+    "VS%": "vs_pct",
+    "Total damage to Champion": "total_damage_to_champion",
+    "Physical Damage": "physical_damage",
+    "Magic Damage": "magic_damage",
+    "True Damage": "true_damage",
+    "DPM": "dpm",
+    "DMG%": "dmg_pct",
+    "K+A Per Minute": "ka_per_minute",
+    "KP%": "kp_pct",
+    "Solo kills": "solo_kills",
+    "Double kills": "double_kills",
+    "Triple kills": "triple_kills",
+    "Quadra kills": "quadra_kills",
+    "Penta kills": "penta_kills",
+    "GD@15": "gd_at_15",
+    "CSD@15": "csd_at_15",
+    "XPD@15": "xpd_at_15",
+    "LVLD@15": "lvld_at_15",
+    "Objectives Stolen": "objectives_stolen",
+    "Damage dealt to turrets": "damage_dealt_to_turrets",
+    "Damage dealt to buildings": "damage_dealt_to_buildings",
+    "Total heal": "total_heal",
+    "Total Heals On Teammates": "total_heals_on_teammates",
+    "Damage self mitigated": "damage_self_mitigated",
+    "Total Damage Shielded On Teammates": "total_damage_shielded_on_teammates",
+    "Time ccing others": "time_ccing_others",
+    "Total Time CC Dealt": "total_time_cc_dealt",
+    "Total damage taken": "total_damage_taken",
+    "Total Time Spent Dead": "total_time_spent_dead",
+    "Consumables purchased": "consumables_purchased",
+    "Items Purchased": "items_purchased",  # attention: P majuscule
+    "Shutdown bounty collected": "shutdown_bounty_collected",
+    "Shutdown bounty lost": "shutdown_bounty_lost",
+}
+
 class Command(BaseCommand):
     help = "Scrape all stats from a game page."
 
@@ -30,15 +93,15 @@ class Command(BaseCommand):
         resp.raise_for_status()
         return BeautifulSoup(resp.text, "html.parser")
 
-    def extract_match_ids(self, game_urls: list[str]) -> list[int]:
-        match_ids: list[int] = []
+    def extract_game_ids(self, game_urls: list[str]) -> list[int]:
+        game_ids: list[int] = []
         for url in game_urls:
             m = re.search(r"/stats/(\d+)/", url)
             if m:
-                match_ids.append(int(m.group(1)))
-        match_ids = list(set(match_ids))
-        print("match_ids", match_ids)
-        return match_ids
+                game_ids.append(int(m.group(1)))
+        game_ids = list(set(game_ids))
+        print("game_ids", game_ids)
+        return game_ids
 
     def _discover_game_page_urls(self, menu_soup: BeautifulSoup, current_page_url: str) -> list[str]:
         """
@@ -74,29 +137,16 @@ class Command(BaseCommand):
 
     def _parse_completestats_table(self, soup: BeautifulSoup) -> dict | None:
         """
-        Retourne un dict:
-        {
-            "champions": [...],       # noms champions (thead, img alt)
-            "rows": { "Kills": [...], ... },  # label de ligne -> valeurs par colonne
-            "by_champion": [         # une entrée par colonne = un pick
-                {
-                    "champion": str,
-                    "player": str,
-                    "role": str,
-                    "stats": { "Level": "...", "Kills": "...", ... },
-                },
-                ...
-            ],
-        }
+        Retourne {"picks": [...]} ou None.
+        Chaque pick : champion, player, role, stats (dict label -> valeur brute).
+        Les structures intermédiaires (colonnes + lignes du tableau) ne sont pas exposées.
         """
         table = soup.select_one("table.completestats")
         if not table:
             return None
-
         thead = table.find("thead")
         if not thead:
             return None
-
         # Première ligne du thead : th vides / images champions
         header_row = thead.find("tr")
         champions: list[str] = []
@@ -107,11 +157,9 @@ class Command(BaseCommand):
                     champions.append(img["alt"].strip())
                 else:
                     champions.append(th.get_text(strip=True))
-
         n = len(champions)
         if n == 0:
             return None
-
         # Lignes du "corps" : souvent sans <tbody> dans le HTML source
         rows: dict[str, list[str]] = {}
         for tr in table.find_all("tr"):
@@ -129,17 +177,18 @@ class Command(BaseCommand):
                 else:
                     values = values[:n]
             rows[label] = values
-
-        by_champion: list[dict] = []
+        picks: list[dict] = []
         for i in range(n):
-            player = rows["Player"][i] if "Player" in rows and i < len(rows["Player"]) else ""
-            role = rows["Role"][i] if "Role" in rows and i < len(rows["Role"]) else ""
+            pr = rows.get("Player", [])
+            rr = rows.get("Role", [])
+            player = pr[i] if i < len(pr) else ""
+            role = rr[i] if i < len(rr) else ""
             stats = {
                 label: vals[i]
                 for label, vals in rows.items()
                 if label not in ("Player", "Role") and i < len(vals)
             }
-            by_champion.append(
+            picks.append(
                 {
                     "champion": champions[i],
                     "player": player,
@@ -147,64 +196,83 @@ class Command(BaseCommand):
                     "stats": stats,
                 }
             )
+        return {"picks": picks}
 
-        return {
-            "champions": champions,
-            "rows": rows,
-            "by_champion": by_champion,
-        }
 
     def scrape_all_game_tables(self, start_url: str) -> list[dict]:
         """
         start_url : n'importe quelle page du match qui contient #gameMenuToggler
         (ex: URL 'Game 1' page-game).
         """
-        print("start_url", start_url)
         session = requests.Session()
         session.trust_env = False
-        print("ça bug pas a sessions")
 
         first = self._fetch_soup(session, start_url)
-        print("ça bug pas a first fetch soup")
         game_urls = self._discover_game_page_urls(first, start_url)
         if not game_urls:
             raise RuntimeError("Aucune URL Game N trouvée dans #gameMenuToggler")
 
-        match_ids = self.extract_match_ids(game_urls)
+        games_ids = self.extract_game_ids(game_urls)
 
         results: list[dict] = []
-        for mid in match_ids:
-            url = f"https://gol.gg/game/stats/{mid}/page-fullstats/"
+        for game_id in games_ids:
+            url = f"https://gol.gg/game/stats/{game_id}/page-fullstats/"
             soup = self._fetch_soup(session, url)
-            print("url juste avant parse completestats", url)
             parsed = self._parse_completestats_table(soup)
             results.append(
                 {
                     "url": url,
+                    "game_id": game_id,
                     "table": parsed,
                 }
             )
         return results
 
-    def add_arguments(self, parser):
-        parser.add_argument(
-            "match_id",
-            type=int,
-            help="ID gol.gg du match (segment /stats/<id>/ dans l'URL).",
+    def save_data_to_model(self, gol_game: GolGame, game_id: int, pick: dict) -> None:
+        stats = pick.get("stats") or {}
+        payload = {
+            "gol_game": gol_game,
+            "game_id": game_id,
+            "champion": pick.get("champion") or "",
+            "player": pick.get("player") or "",
+            "role": pick.get("role") or "",
+        }
+        for json_key, model_field in STAT_MAP.items():
+            raw = stats.get(json_key)
+            # adapte selon tes types de champs
+            if model_field in {"kda", "csm", "gold_pct", "vspm", "wpm", "vwpm", "wcpm", "vs_pct", "dmg_pct", "ka_per_minute", "kp_pct"}:
+                payload[model_field] = to_decimal(raw, field=model_field)
+            elif model_field in {"gd_at_15", "csd_at_15", "xpd_at_15", "lvld_at_15"}:
+                payload[model_field] = to_int(raw, field=model_field, empty_as_zero=True)  # signé
+            else:
+                payload[model_field] = to_int(raw, field=model_field, empty_as_zero=True)
+        GameFullStats.objects.update_or_create(
+            gol_game=gol_game,
+            game_id=game_id,
+            champion=payload["champion"],
+            player=payload["player"],
+            defaults=payload,
         )
 
+    def add_arguments(self, parser):
+        parser.add_argument("game_id", type=int, help="The ID of the game to scrape.")
+
     def handle(self, *args, **options):
-        match_id = options["match_id"]
+        match_id = options["game_id"]
+        print("match_id", match_id)
         START_URL = f"https://gol.gg/game/stats/{match_id}/page-fullstats/"
-        for item in self.scrape_all_game_tables(START_URL):
-            print("===", item["url"], "===")
-            t = item["table"]
-            if not t:
-                print("Pas de table completestats")
-                continue
-            print("Champions:", t["champions"])
-            print("Nb stats (lignes):", len(t["rows"]))
-            if t.get("by_champion"):
-                print("Ex. pick 0:", t["by_champion"][0])
-            for k in list(t["rows"].keys())[:3]:
-                print(k, "->", t["rows"][k][:5], "...")
+        results = self.scrape_all_game_tables(START_URL)
+        data = json.dumps(results, ensure_ascii=False, indent=2)
+        # Save the scraped results to a file for debugging or later use.
+        output_filename = f"golgg_match_{match_id}_fullstats.json"
+        with open(output_filename, "w", encoding="utf-8") as f:
+            f.write(data)
+        self.stdout.write(self.style.SUCCESS(f"Saved scraped data to {output_filename}"))
+        for game in results:
+            game_id = game["game_id"]
+            gol_game = GolGame.objects.get(match_id=game_id)  # ou match principal, selon ton modèle
+            picks = (game.get("table") or {}).get("picks", [])
+            for pick in picks:
+                self.save_data_to_model(gol_game, game_id, pick)
+
+
