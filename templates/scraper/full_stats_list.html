@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Full Stats — Scrapyboard{% endblock %}
+
+{% block content %}
+  <h1>Full Stats</h1>
+
+  <p style="margin: 8px 0 16px 0;">
+    {{ total_count }} entrées
+  </p>
+
+  {% if stats %}
+    <table style="width:100%; border-collapse: collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Match ID</th>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Game ID</th>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Player</th>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Champion</th>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Role</th>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">K/D/A</th>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">CS</th>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">Gold</th>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">DPM</th>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:8px;">KP%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in stats %}
+          <tr>
+            <td style="border-bottom:1px solid #f0f0f0; padding:8px;">{{ s.gol_game.match_id }}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:8px;">{{ s.game_id }}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:8px;">{{ s.player }}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:8px;">{{ s.champion }}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:8px;">{{ s.role }}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:8px;">{{ s.kills }}/{{ s.deaths }}/{{ s.assists }}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:8px;">{{ s.cs }}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:8px;">{{ s.golds }}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:8px;">{{ s.dpm }}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:8px;">{{ s.kp_pct }}</td>
+          </tr>
+
+          <tr>
+            <td colspan="10" style="padding:8px 8px 16px 8px; border-bottom:1px solid #ddd;">
+              <details>
+                <summary style="cursor:pointer;">Voir plus de stats</summary>
+                <div style="margin-top:8px; display:grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap:8px;">
+                  <div><strong>Level:</strong> {{ s.level }}</div>
+                  <div><strong>KDA:</strong> {{ s.kda }}</div>
+                  <div><strong>CSM:</strong> {{ s.csm }}</div>
+                  <div><strong>GPM:</strong> {{ s.gpm }}</div>
+
+                  <div><strong>Vision Score:</strong> {{ s.vision_score }}</div>
+                  <div><strong>Wards placed:</strong> {{ s.wards_placed }}</div>
+                  <div><strong>Wards destroyed:</strong> {{ s.wards_destroyed }}</div>
+                  <div><strong>VSPM:</strong> {{ s.vspm }}</div>
+
+                  <div><strong>DMG%:</strong> {{ s.dmg_pct }}</div>
+                  <div><strong>Gold%:</strong> {{ s.gold_pct }}</div>
+                  <div><strong>GD@15:</strong> {{ s.gd_at_15 }}</div>
+                  <div><strong>CSD@15:</strong> {{ s.csd_at_15 }}</div>
+                </div>
+              </details>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Aucune stat trouvée.</p>
+  {% endif %}
+{% endblock %}
