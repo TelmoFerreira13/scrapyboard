@@ -262,12 +262,6 @@ class Command(BaseCommand):
         print("match_id", match_id)
         START_URL = f"https://gol.gg/game/stats/{match_id}/page-fullstats/"
         results = self.scrape_all_game_tables(START_URL)
-        data = json.dumps(results, ensure_ascii=False, indent=2)
-        # Save the scraped results to a file for debugging or later use.
-        output_filename = f"golgg_match_{match_id}_fullstats.json"
-        with open(output_filename, "w", encoding="utf-8") as f:
-            f.write(data)
-        self.stdout.write(self.style.SUCCESS(f"Saved scraped data to {output_filename}"))
         for game in results:
             game_id = game["game_id"]
             gol_game = GolGame.objects.get(match_id=game_id)  # ou match principal, selon ton modèle
